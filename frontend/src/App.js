@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import {
+  CircularProgress,
   Button,
   Card,
   TextField,
@@ -19,7 +20,7 @@ const useStyles = makeStyles((theme) => ({
     padding: 10,
   },
   magnetInput: {
-    width: "60ch",
+    width: "85ch",
   },
   startButton: {
     marginTop: 10,
@@ -33,10 +34,10 @@ function App() {
   const [socketConnected, setSocketConnected] = useState(false);
 
   const [torrentMagnet, setTorrentMagnet] = useState(test_link);
-  // const [acknowledged, setAcknowledged] = useState(true);
+  const [started, setStarted] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const [files, setFiles] = useState([]);
-  const addFile = (file) => setFiles((files) => [...files, file]);
   const updateFile = (file) => {
     setFiles((files) =>
       files.map((curr) =>
@@ -62,14 +63,15 @@ function App() {
       setSocketConnected(socket.connected);
     });
 
+    socket.on("acknowledge", (data) => setAcknowledged(data.acknowledged));
     socket.on("fileUpdate", updateFile);
-    socket.on("file", addFile);
-
+    socket.on("files", setFiles);
   }, [socket]);
 
   const handleDownloadTorrent = () => {
     console.log("Emitting torrent download request");
     socket.emit("start", { torrentMagnet: torrentMagnet });
+    setStarted(true);
   };
 
   return (
@@ -80,8 +82,9 @@ function App() {
       alignItems="center"
       className={classes.root}
     >
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 20, textAlign: "center" }}>
         <div>
+          <h1> Anon - Tor </h1>
           <b>Connection status:</b>{" "}
           {socketConnected ? "Connected" : "Disconnected"}
         </div>
@@ -113,21 +116,26 @@ function App() {
       </div>
 
       <div>
-        {files.map((file, index) => (
-          <Card key={index.toString()} className={classes.cards}>
-            <pre>{file.name}</pre>
-            
-            <pre>
-              {file.downloaded} bytes / {file.length} bytes
-            </pre>
+        {started && acknowledged && files.length > 0 ? (
+          files.map((file, index) => (
+            <Card key={index.toString()} className={classes.cards}>
+              <pre>{file.name}</pre>
 
-            <LinearProgress
-              variant="determinate"
-              value={(file.downloaded / file.length) * 100}
-            />
+              <pre>
+                {file.downloaded} bytes / {file.length} bytes
+              </pre>
 
-          </Card>
-        ))}
+              <LinearProgress
+                variant="determinate"
+                value={(file.downloaded / file.length) * 100}
+              />
+            </Card>
+          ))
+        ) : started ? (
+          <CircularProgress />
+        ) : (
+          <pre>awaiting</pre>
+        )}
       </div>
     </Grid>
   );

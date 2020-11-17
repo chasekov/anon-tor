@@ -1,12 +1,18 @@
 require("dotenv").config();
 
+/* Torrent Stream */
 var torrentStream = require("torrent-stream");
+var mkdirp = require("mkdirp");
+var rootPath = process.cwd();
+var fs = require("fs");
+var crypto = require("crypto");
+/* Torrent Stream */
 
+/* Express/Server Setup */
 var http = require("http");
 var cors = require("cors");
 var express = require("express");
 var app = express();
-
 var server = http.createServer(app);
 var io = require("socket.io")(server, {
   cors: {
@@ -15,16 +21,23 @@ var io = require("socket.io")(server, {
   },
 });
 server.listen(process.env.SERVER_PORT);
-
 app.use(cors());
-
-// Register the index route of your app that returns the HTML file
 app.get("/", function (req, res) {
   console.log("Index requested");
   res.json("{}");
 });
+/* Express/Server Setup */
 
-// Handle connection
+function generateTempDirectoryName() {
+  return crypto.randomBytes(20).toString("hex");
+}
+
+function generateTempDirectory() {
+  var tempPath = rootPath + "/downloads/" + generateTempDirectoryName() + "/";
+  mkdirp.sync(tempPath);
+  return tempPath;
+}
+
 io.on("connection", function (socket) {
   console.log("Connected succesfully to the socket ...");
   var engine = null;
@@ -37,17 +50,30 @@ io.on("connection", function (socket) {
     engine = torrentStream(data.torrentMagnet);
 
     engine.on("ready", function (e) {
-      engine.files.forEach(function (file) {
-        socket.emit("file", {
+      // Acknowledge Request
+      socket.emit("acknowledge", { acknowledged: true });
+
+      // Send torrent file list
+      socket.emit(
+        "files",
+        engine.files.map((file) => ({
           name: file.name,
           length: file.length,
           downloaded: 0,
-        });
+        }))
+      );
 
-        var stream = file.createReadStream();
+      // Download files / send progress updates
+      var downloadPath = generateTempDirectory();
+      engine.files.forEach(function (file) {
+        console.log("Starting: " + file.name);
+
         var bytesRead = 0;
+        var readStream = file.createReadStream();
+        var writeStream = fs.createWriteStream(downloadPath + file.name);
+        readStream.pipe(writeStream);
 
-        stream.on("data", function (data) {
+        readStream.on("data", function (data) {
           bytesRead += data.length;
 
           socket.emit("fileUpdate", {
@@ -57,11 +83,12 @@ io.on("connection", function (socket) {
           });
         });
 
-        // // stream is readable stream to containing the file content
+        readStream.on("end", function () {
+          console.log("Completed: " + file.name);
+        });
+
       });
     });
-
-    socket.emit("acknowledge", { acknowledged: true });
   });
 
   socket.on("disconnect", function (data) {
