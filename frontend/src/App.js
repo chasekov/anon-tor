@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
+import MuiAlert from "@material-ui/lab/Alert";
 import {
   CircularProgress,
   Button,
@@ -10,8 +11,13 @@ import {
 } from "@material-ui/core";
 import io from "socket.io-client";
 
+function Alert(props) {
+  return <MuiAlert elevation={6} variant="filled" {...props} />;
+}
+
 const test_link =
-  "magnet:?xt=urn:btih:aaf08110291c21ee4a86893271f1001e8b512452&dn=KNOPPIX_V7.2.0CD-2013-06-16-EN";
+  "magnet:?xt=urn:btih:53036b45c50376fdfd14e8be4c17b4ff71740580&dn=Piano+Sheet+Music+by+Grigor+Iliev";
+//"magnet:?xt=urn:btih:f15f3c9bdc36e88613e226c0c6466123c460ce37&dn=comics-in-quarantine-solving-problems-s-01-e-16";
 
 const useStyles = makeStyles((theme) => ({
   cards: {
@@ -36,9 +42,11 @@ function App() {
   const [torrentMagnet, setTorrentMagnet] = useState(test_link);
   const [started, setStarted] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [downloadLink, setDownloadLink] = useState(null);
 
   const [files, setFiles] = useState([]);
   const updateFile = (file) => {
+    console.log(file);
     setFiles((files) =>
       files.map((curr) =>
         curr.name === file.name ? Object.assign({}, file) : curr
@@ -66,10 +74,20 @@ function App() {
     socket.on("acknowledge", (data) => setAcknowledged(data.acknowledged));
     socket.on("fileUpdate", updateFile);
     socket.on("files", setFiles);
+    socket.on("downloadLink", (data) => {
+      setDownloadLink(data.identifier);
+      setStarted(false);
+    });
+    
   }, [socket]);
 
   const handleDownloadTorrent = () => {
     console.log("Emitting torrent download request");
+
+    setAcknowledged(false);
+    setDownloadLink(null);
+    setFiles([]);
+
     socket.emit("start", { torrentMagnet: torrentMagnet });
     setStarted(true);
   };
@@ -108,12 +126,25 @@ function App() {
             className={classes.startButton}
             type="button"
             label="Start"
+            variant="contained" 
             onClick={handleDownloadTorrent}
+            color="primary"
+            disabled={started}
           >
             Start
           </Button>
         </Card>
       </div>
+
+      {downloadLink != null ? (
+        <Alert severity="success">
+          <a href={"http://localhost:3001/download?sid=" + downloadLink}>
+            Your download is ready!
+          </a>
+        </Alert>
+      ) : (
+        ""
+      )}
 
       <div>
         {started && acknowledged && files.length > 0 ? (
@@ -125,16 +156,13 @@ function App() {
                 {file.downloaded} bytes / {file.length} bytes
               </pre>
 
-              <LinearProgress
-                variant="determinate"
-                value={(file.downloaded / file.length) * 100}
-              />
+              <LinearProgress variant="determinate" value={file.progress} />
             </Card>
           ))
         ) : started ? (
           <CircularProgress />
         ) : (
-          <pre>awaiting</pre>
+          ""
         )}
       </div>
     </Grid>
